@@ -1,0 +1,43 @@
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  perfilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Compilar y ejecutar las dos versiones
+        run: make comparar
+
+      - name: El resultado es el mismo y la versión rápida lo es
+        run: |
+          t_lento=$(awk '{print $2}' lento.txt)
+          t_rapido=$(awk '{print $2}' rapido.txt)
+          c_lento=$(awk '{print $4}' lento.txt)
+          c_rapido=$(awk '{print $4}' rapido.txt)
+          echo "lento: ${t_lento} ms (checksum ${c_lento})"
+          echo "rápido: ${t_rapido} ms (checksum ${c_rapido})"
+          test "$c_lento" = "$c_rapido" || { echo "los dos programas no calculan lo mismo"; exit 1; }
+          test "$t_rapido" -gt 0 || { echo "el tiempo medido es cero: revise que la multiplicación esté implementada"; exit 1; }
+          aceleracion=$((t_lento / t_rapido))
+          echo "aceleración: ${aceleracion}x"
+          test "$aceleracion" -ge 3 || { echo "se esperaba al menos 3x y se obtuvo ${aceleracion}x"; exit 1; }
+
+      - name: Callgrind corre sobre la versión rápida
+        run: valgrind --tool=callgrind --callgrind-out-file=/tmp/callgrind.out ./rapido
+
+      - name: La evidencia del perfilado está en el repositorio
+        run: |
+          for f in evidencia/callgrind.txt evidencia/perf.txt; do
+            test -s "$f" || { echo "Falta $f o está vacío"; exit 1; }
+          done
+          palabras=$(wc -w < analisis.md)
+          test "$palabras" -ge 150 || { echo "analisis.md tiene $palabras palabras: falta el análisis"; exit 1; }
