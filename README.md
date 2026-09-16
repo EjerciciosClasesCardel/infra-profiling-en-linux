@@ -6,6 +6,10 @@ Carlos Andrés Delgado Saavedra
 
 [![Pruebas](../../actions/workflows/pruebas.yml/badge.svg)](../../actions/workflows/pruebas.yml)
 
+Lo que cada parte necesita de las bibliotecas y herramientas está en
+[DOCUMENTACION.md](DOCUMENTACION.md), con ejemplos que corren y los enlaces
+a la documentación oficial.
+
 Un programa que funciona y es lento. La tarea no es adivinar por qué: es
 medirlo con las herramientas del sistema, decidir con esos números qué cambiar,
 y demostrar la mejora. Antes de eso, un paso corto para ver un programa de
