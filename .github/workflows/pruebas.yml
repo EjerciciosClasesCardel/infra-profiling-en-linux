@@ -5,59 +5,138 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Un push nuevo cancela el run anterior de la misma rama.
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  perfilar:
+  paso-0:
+    name: "Paso 0: el programa visto desde afuera"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar Valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
-
-      - name: "Paso 0: mirar un programa de cuatro hilos desde afuera"
-        run: make monitor
-
-      - name: "Paso 0: ps y top vieron los cuatro hilos"
+      - name: Compilar, ejecutar y verificar
         run: |
+          correr() {
+            make monitor
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
           hilos=$(awk '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $NF == "ocupado" {n++} END {print n+0}' evidencia/ps.txt)
           echo "renglones de hilo en ps: $hilos"
           test "$hilos" -ge 4 || { echo "ps -L no muestra los cuatro hilos del programa"; exit 1; }
+          VERIFICAR
+          }
+          correr
+          salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=Makefile,title=Paso 0::$(echo "$salida" | tail -1)"; exit 1; }
+          echo "$salida"
 
-      - name: "Paso 1 y 2: compilar y ejecutar las dos versiones"
-        run: make comparar
-
-      - name: "Paso 2: el resultado es el mismo y la versión rápida lo es"
+      - name: Resumen
+        if: always()
         run: |
+          { echo "### Paso 0: el programa visto desde afuera"; echo '```'; cat evidencia/ps.txt 2>/dev/null || echo "sin salida de evidencia/ps.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  pasos-1-2:
+    name: "Pasos 1 y 2: medir y acelerar"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar Valgrind
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq valgrind
+
+      - name: Compilar, ejecutar y verificar
+        run: |
+          correr() {
+            make comparar && make cachegrind > /dev/null 2>&1; grep 'D1  miss rate' evidencia/cachegrind_lento.txt evidencia/cachegrind_rapido.txt | tee d1.txt
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
           t_lento=$(awk '{print $2}' lento.txt)
           t_rapido=$(awk '{print $2}' rapido.txt)
           c_lento=$(awk '{print $5}' lento.txt)
           c_rapido=$(awk '{print $5}' rapido.txt)
-          echo "lento: ${t_lento} ms (checksum ${c_lento})"
-          echo "rápido: ${t_rapido} ms (checksum ${c_rapido})"
+          echo "lento: ${t_lento} ms (checksum ${c_lento}), rapido: ${t_rapido} ms (checksum ${c_rapido})"
           test "$c_lento" = "$c_rapido" || { echo "los dos programas no calculan lo mismo"; exit 1; }
-          test "$t_rapido" -gt 0 || { echo "el tiempo medido es cero: revise que la multiplicación esté implementada"; exit 1; }
+          test "$t_rapido" -gt 0 || { echo "el tiempo medido es cero: revise que la multiplicacion este implementada"; exit 1; }
           aceleracion=$((t_lento / t_rapido))
-          echo "aceleración: ${aceleracion}x"
+          echo "aceleracion: ${aceleracion}x"
           test "$aceleracion" -ge 3 || { echo "se esperaba al menos 3x y se obtuvo ${aceleracion}x"; exit 1; }
-
-      - name: "Paso 1: los fallos de caché de las dos versiones"
-        run: make cachegrind
-
-      - name: "Paso 1: la versión rápida falla menos en D1"
-        run: |
           lento=$(grep 'D1  miss rate' evidencia/cachegrind_lento.txt | awk '{print $5}' | tr -d '%')
           rapido=$(grep 'D1  miss rate' evidencia/cachegrind_rapido.txt | awk '{print $5}' | tr -d '%')
-          echo "D1 miss rate: lento ${lento}%, rápido ${rapido}%"
-          test -n "$lento" -a -n "$rapido" || { echo "cachegrind no dejó la tasa de fallos de D1"; exit 1; }
+          echo "D1 miss rate: lento ${lento}%, rapido ${rapido}%"
+          test -n "$lento" -a -n "$rapido" || { echo "cachegrind no dejo la tasa de fallos de D1"; exit 1; }
           awk -v l="$lento" -v r="$rapido" 'BEGIN { if (r + 0 >= l + 0) { print "la version rapida no falla menos en D1 que la lenta"; exit 1 } }'
+          valgrind --tool=callgrind --callgrind-out-file=/tmp/callgrind.out ./rapido > /dev/null 2>&1 || { echo "callgrind no pudo correr sobre la version rapida"; exit 1; }
+          VERIFICAR
+          }
+          correr
+          if ! salida=$(verificar 2>&1); then
+            echo "$salida"; echo "::notice title=Pasos 1 y 2::segunda corrida antes de marcar rojo"
+            correr
+            salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=rapido.cpp,title=Pasos 1 y 2::$(echo "$salida" | tail -1)"; exit 1; }
+          fi
+          echo "$salida"
 
-      - name: Callgrind corre sobre la versión rápida
-        run: valgrind --tool=callgrind --callgrind-out-file=/tmp/callgrind.out ./rapido
-
-      - name: La evidencia del perfilado está en el repositorio
+      - name: Resumen
+        if: always()
         run: |
+          { echo "### Pasos 1 y 2: medir y acelerar"; echo '```'; cat lento.txt 2>/dev/null || echo "sin salida de lento.txt"; cat rapido.txt 2>/dev/null || echo "sin salida de rapido.txt"; cat d1.txt 2>/dev/null || echo "sin salida de d1.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  evidencia:
+    name: "Evidencia y análisis"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar, ejecutar y verificar
+        run: |
+          correr() {
+            ls -l evidencia/ | tee evidencia.txt; wc -w ANALISIS.md | tee -a evidencia.txt
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
           for f in evidencia/callgrind.txt evidencia/perf.txt; do
-            test -s "$f" || { echo "Falta $f o está vacío"; exit 1; }
+            test -s "$f" || { echo "Falta $f o esta vacio"; exit 1; }
           done
           palabras=$(wc -w < ANALISIS.md)
-          test "$palabras" -ge 260 || { echo "ANALISIS.md tiene $palabras palabras: falta el análisis"; exit 1; }
+          test "$palabras" -ge 260 || { echo "ANALISIS.md tiene $palabras palabras: falta el analisis"; exit 1; }
+          echo "evidencia completa y ANALISIS.md con $palabras palabras"
+          VERIFICAR
+          }
+          correr
+          salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=ANALISIS.md,title=Evidencia y análisis::$(echo "$salida" | tail -1)"; exit 1; }
+          echo "$salida"
+
+      - name: Resumen
+        if: always()
+        run: |
+          { echo "### Evidencia y análisis"; echo '```'; cat evidencia.txt 2>/dev/null || echo "sin salida de evidencia.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  resumen:
+    name: Resumen
+    needs: [paso-0, pasos-1-2, evidencia]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Estado de las partes
+        run: |
+          estado() { case "$1" in success) echo "en verde";; failure) echo "en rojo";; *) echo "$1";; esac; }
+          verdes=0
+          for r in "${{ needs.paso-0.result }}" "${{ needs.pasos-1-2.result }}" "${{ needs.evidencia.result }}"; do
+            test "$r" = success && verdes=$((verdes + 1))
+          done
+          {
+            echo "## ${verdes} de 3 partes en verde"
+            echo
+            echo "| Parte | Estado |"
+            echo "|---|---|"
+            echo "| Paso 0: el programa visto desde afuera | $(estado "${{ needs.paso-0.result }}") |"
+            echo "| Pasos 1 y 2: medir y acelerar | $(estado "${{ needs.pasos-1-2.result }}") |"
+            echo "| Evidencia y análisis | $(estado "${{ needs.evidencia.result }}") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${verdes} de 3 partes en verde"

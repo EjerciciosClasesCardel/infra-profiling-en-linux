@@ -4,6 +4,8 @@ Infraestructuras Paralelas y Distribuidas
 Escuela de Ingeniería de Sistemas y Computación, Universidad del Valle
 Carlos Andrés Delgado Saavedra
 
+[![Pruebas](../../actions/workflows/pruebas.yml/badge.svg)](../../actions/workflows/pruebas.yml)
+
 Un programa que funciona y es lento. La tarea no es adivinar por qué: es
 medirlo con las herramientas del sistema, decidir con esos números qué cambiar,
 y demostrar la mejora. Antes de eso, un paso corto para ver un programa de
@@ -92,10 +94,18 @@ número de la aceleración va en la tabla.
 
 ## Qué revisa el flujo de Actions
 
-Que `ps` vea los cuatro hilos del paso 0. Que las dos versiones compilen, que
-los checksums coincidan, que la aceleración llegue a tres veces, que la
-versión rápida falle menos en D1 que la lenta, que Callgrind corra sobre la
-versión rápida, y que la evidencia y el análisis estén en el repositorio.
+- Paso 0: que `ps` vea los cuatro hilos.
+- Pasos 1 y 2: que las dos versiones compilen, que los checksums coincidan,
+  que la aceleración llegue a tres veces, que la versión rápida falle menos
+  en D1 que la lenta y que Callgrind corra sobre ella.
+- Evidencia: que `evidencia/` tenga las salidas y que `ANALISIS.md` tenga el
+  análisis.
+
+Cada paso es un job aparte: la lista de verificaciones del commit dice cuál
+quedó en verde y cuál no, y la pestaña del run trae un resumen con las
+salidas. Cuando la verificación de tiempos falla, el flujo repite la corrida
+una vez antes de marcar rojo, y el error queda anotado sobre el archivo de
+ese paso. Un push nuevo cancela el run anterior.
 
 ## Para pensar
 
