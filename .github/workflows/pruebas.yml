@@ -14,15 +14,24 @@ jobs:
       - name: Instalar Valgrind
         run: sudo apt-get update && sudo apt-get install -y valgrind
 
-      - name: Compilar y ejecutar las dos versiones
+      - name: "Paso 0: mirar un programa de cuatro hilos desde afuera"
+        run: make monitor
+
+      - name: "Paso 0: ps y top vieron los cuatro hilos"
+        run: |
+          hilos=$(awk '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $NF == "ocupado" {n++} END {print n+0}' evidencia/ps.txt)
+          echo "renglones de hilo en ps: $hilos"
+          test "$hilos" -ge 4 || { echo "ps -L no muestra los cuatro hilos del programa"; exit 1; }
+
+      - name: "Paso 1 y 2: compilar y ejecutar las dos versiones"
         run: make comparar
 
-      - name: El resultado es el mismo y la versión rápida lo es
+      - name: "Paso 2: el resultado es el mismo y la versión rápida lo es"
         run: |
           t_lento=$(awk '{print $2}' lento.txt)
           t_rapido=$(awk '{print $2}' rapido.txt)
-          c_lento=$(awk '{print $4}' lento.txt)
-          c_rapido=$(awk '{print $4}' rapido.txt)
+          c_lento=$(awk '{print $5}' lento.txt)
+          c_rapido=$(awk '{print $5}' rapido.txt)
           echo "lento: ${t_lento} ms (checksum ${c_lento})"
           echo "rápido: ${t_rapido} ms (checksum ${c_rapido})"
           test "$c_lento" = "$c_rapido" || { echo "los dos programas no calculan lo mismo"; exit 1; }
@@ -30,6 +39,17 @@ jobs:
           aceleracion=$((t_lento / t_rapido))
           echo "aceleración: ${aceleracion}x"
           test "$aceleracion" -ge 3 || { echo "se esperaba al menos 3x y se obtuvo ${aceleracion}x"; exit 1; }
+
+      - name: "Paso 1: los fallos de caché de las dos versiones"
+        run: make cachegrind
+
+      - name: "Paso 1: la versión rápida falla menos en D1"
+        run: |
+          lento=$(grep 'D1  miss rate' evidencia/cachegrind_lento.txt | awk '{print $5}' | tr -d '%')
+          rapido=$(grep 'D1  miss rate' evidencia/cachegrind_rapido.txt | awk '{print $5}' | tr -d '%')
+          echo "D1 miss rate: lento ${lento}%, rápido ${rapido}%"
+          test -n "$lento" -a -n "$rapido" || { echo "cachegrind no dejó la tasa de fallos de D1"; exit 1; }
+          awk -v l="$lento" -v r="$rapido" 'BEGIN { if (r + 0 >= l + 0) { print "la version rapida no falla menos en D1 que la lenta"; exit 1 } }'
 
       - name: Callgrind corre sobre la versión rápida
         run: valgrind --tool=callgrind --callgrind-out-file=/tmp/callgrind.out ./rapido
@@ -39,5 +59,5 @@ jobs:
           for f in evidencia/callgrind.txt evidencia/perf.txt; do
             test -s "$f" || { echo "Falta $f o está vacío"; exit 1; }
           done
-          palabras=$(wc -w < analisis.md)
-          test "$palabras" -ge 150 || { echo "analisis.md tiene $palabras palabras: falta el análisis"; exit 1; }
+          palabras=$(wc -w < ANALISIS.md)
+          test "$palabras" -ge 260 || { echo "ANALISIS.md tiene $palabras palabras: falta el análisis"; exit 1; }

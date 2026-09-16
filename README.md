@@ -6,7 +6,30 @@ Carlos Andrés Delgado Saavedra
 
 Un programa que funciona y es lento. La tarea no es adivinar por qué: es
 medirlo con las herramientas del sistema, decidir con esos números qué cambiar,
-y demostrar la mejora.
+y demostrar la mejora. Antes de eso, un paso corto para ver un programa de
+varios hilos desde afuera, con las herramientas que muestran qué hace cada
+hilo mientras corre.
+
+## Paso 0: mirar un programa desde afuera
+
+`ocupado.cpp` lanza cuatro hilos con OpenMP; el hilo `h` trabaja durante
+`h + 1` segundos y termina. Mientras corre, `ps` y `top` lo muestran hilo por
+hilo:
+
+```bash
+make monitor       # deja evidencia/ps.txt
+```
+
+La regla lanza el programa, espera dos segundos y medio y toma dos fotos:
+`ps -L`, con un renglón por hilo y el `%CPU` promedio desde que el hilo
+arrancó, y `top -H`, con el `%CPU` del último intervalo. Para el mismo hilo
+los dos números no coinciden, y la explicación de por qué va en el análisis.
+La columna `PSR` de `ps` dice en qué procesador estaba cada hilo en ese
+instante.
+
+Con `htop` se ve lo mismo en vivo: la tecla `H` muestra los hilos y `F2`
+agrega la columna `PROCESSOR`. Con `./ocupado &` en una terminal y `htop`
+en otra se ve a los hilos apagarse uno por uno.
 
 ## El programa
 
@@ -32,7 +55,18 @@ Con `perf`, para ver qué pasa con la caché:
 make perfstat      # deja evidencia/perf.txt
 ```
 
-Las dos salidas se guardan en `evidencia/` y se suben al repositorio. Son la
+Y con Cachegrind, que simula la caché y cuenta los fallos con exactitud:
+
+```bash
+make cachegrind    # deja evidencia/cachegrind_lento.txt y cachegrind_rapido.txt
+```
+
+Esta última regla corre sobre las dos versiones, así que su salida completa
+solo se tiene al terminar el paso 2. La línea que importa es `D1 miss rate`:
+qué fracción de los accesos a datos no encontró lo que buscaba en la caché
+de primer nivel.
+
+Las salidas se guardan en `evidencia/` y se suben al repositorio. Son la
 prueba de que la decisión salió de una medición y no de una corazonada.
 
 Si trabaja en Windows, las dos herramientas corren dentro de WSL2. En macOS no
@@ -52,18 +86,23 @@ make comparar
 
 ## Paso 3: explicar
 
-`analisis.md` con qué mostró el perfil, qué se cambió y cuánto se ganó. El
+`ANALISIS.md` con lo que mostraron `ps` y `top`, lo que mostró el perfil, los
+fallos de caché de las dos versiones, qué se cambió y cuánto se ganó. El
 número de la aceleración va en la tabla.
 
 ## Qué revisa el flujo de Actions
 
-Que las dos versiones compilen, que los checksums coincidan, que la aceleración
-llegue a tres veces, que Callgrind corra sobre la versión rápida, y que la
-evidencia y el análisis estén en el repositorio.
+Que `ps` vea los cuatro hilos del paso 0. Que las dos versiones compilen, que
+los checksums coincidan, que la aceleración llegue a tres veces, que la
+versión rápida falle menos en D1 que la lenta, que Callgrind corra sobre la
+versión rápida, y que la evidencia y el análisis estén en el repositorio.
 
 ## Para pensar
 
 La aceleración que se obtiene aquí no viene de usar más núcleos: el programa
 sigue siendo de un solo hilo. Viene de pedirle a la memoria lo que ya tenía
-cerca. Vale la pena repetir la medición de `perf stat` sobre la versión rápida
-y comparar los fallos de caché con los de la primera.
+cerca. Las dos versiones hacen la misma cantidad de multiplicaciones y Cachegrind
+cuenta casi los mismos accesos a datos; lo que cambia es cuántos de esos
+accesos encuentran la línea ya cargada. Vale la pena repetir `perf stat` sobre
+la versión rápida y ver si el contador de hardware cuenta lo mismo que el
+simulador.
