@@ -16,6 +16,31 @@ y demostrar la mejora. Antes de eso, un paso corto para ver un programa de
 varios hilos desde afuera, con las herramientas que muestran qué hace cada
 hilo mientras corre.
 
+## Requisitos
+
+| Qué | Linux (Debian/Ubuntu) | macOS | Windows |
+|---|---|---|---|
+| `g++` con OpenMP y `make` | `sudo apt install build-essential` | máquina virtual con Linux | WSL2 con Ubuntu |
+| Valgrind (Callgrind y Cachegrind) | `sudo apt install valgrind` | máquina virtual con Linux | dentro de WSL2, el mismo `apt` |
+| `perf` | `sudo apt install linux-perf` en Debian; `sudo apt install linux-tools-generic` en Ubuntu | máquina virtual con Linux | dentro de WSL2, `linux-tools-generic` |
+| `ps`, `top` y `htop` | `sudo apt install htop` (los otros dos vienen con el sistema) | máquina virtual con Linux | dentro de WSL2 |
+
+Las herramientas de este ejercicio son de Linux. En macOS no hay Valgrind
+ni `perf` para el procesador actual: se trabaja en una máquina virtual con
+Debian o Ubuntu (UTM en Apple Silicon, VirtualBox en Intel). En WSL2 todo
+corre dentro de la distribución; el paquete `linux-tools-generic` deja
+`perf` en `/usr/lib/linux-tools/<versión>/perf`, y desde ahí se invoca.
+Para que `perf stat` cuente eventos como usuario normal,
+`kernel.perf_event_paranoid` tiene que estar en 2 o menos:
+
+```bash
+cat /proc/sys/kernel/perf_event_paranoid
+sudo sysctl -w kernel.perf_event_paranoid=1
+```
+
+Cómo dejar cada sistema listo, paso a paso, está en
+[DOCUMENTACION.md](DOCUMENTACION.md), al final.
+
 ## Paso 0: mirar un programa desde afuera
 
 `ocupado.cpp` lanza cuatro hilos con OpenMP; el hilo `h` trabaja durante
